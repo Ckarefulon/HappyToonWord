@@ -1,0 +1,53 @@
+name: Auto Release on Push
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: 获取上一版本 tag
+        id: latest-tag
+        run: |
+          git fetch --tags
+          # 按版本号降序排序，取最大的那个（如 v9, v10 等均可正确处理）
+          LATEST_TAG=$(git tag --sort=-v:refname | head -n 1)
+          echo "上一版本 tag: $LATEST_TAG"
+          echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: 计算新版本号（整数 +1）
+        id: new-version
+        run: |
+          TAG="${{ steps.latest-tag.outputs.tag }}"
+          VERSION_NUM="${TAG#v}"
+          NEW_NUM=$((VERSION_NUM + 1))
+          NEW_TAG="v${NEW_NUM}"
+          echo "新版本号: $NEW_TAG"
+          echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: 创建并推送新 tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${{ steps.new-version.outputs.new_tag }}"
+          git push origin "${{ steps.new-version.outputs.new_tag }}"
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.new-version.outputs.new_tag }}
+          name: Release ${{ steps.new-version.outputs.new_tag }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
